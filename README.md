@@ -44,7 +44,7 @@ http://localhost:8000/
 
 Once hosted, use:
 ```
-[YOUR HOSTED URL HERE]
+https://hng12-stage1-classify.onrender.com/api/classify-number
 ```
 
 ## API Endpoint
@@ -92,7 +92,7 @@ The API returns an error response if the input is invalid:
 This project is open-source and available under the [MIT License](LICENSE).
 
 ## Author
-**[Your Name]**
+**Ebuka**
 
 ## Backlink
 Looking to Hire a Go developer? Check out [HNG's talent pool](https://hng.tech/hire/golang-developers).

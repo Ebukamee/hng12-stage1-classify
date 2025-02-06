@@ -173,7 +173,6 @@ func get(w http.ResponseWriter, r *http.Request) {
 		Properties:  Properties(num),
 		SumOfDigits: sumOfDigits(num),
 		FunFact:     fetchFunFact(num),
-		Error:       false,
 	}
 
 	// Send valid JSON response
