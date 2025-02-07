@@ -15,13 +15,16 @@ import (
 
 // Number struct for response
 type Number struct {
-	Integer     int      `json:"number,omitempty"`
-	IsPrime     bool     `json:"is_prime,omitempty"`
-	IsPerfect   bool     `json:"is_perfect,omitempty"`
-	Properties  []string `json:"properties,omitempty"`
-	SumOfDigits int      `json:"digit_sum,omitempty"`
-	FunFact     string   `json:"fun_fact,omitempty"`
-	Error       bool     `json:"error"`
+	Integer     int      `json:"number"`
+	IsPrime     bool     `json:"is_prime"`
+	IsPerfect   bool     `json:"is_perfect"`
+	Properties  []string `json:"properties"`
+	SumOfDigits int      `json:"digit_sum"`
+	FunFact     string   `json:"fun_fact"`
+}
+type Err struct {
+	Integer string `json:"number"`
+	Anomaly bool   `json:"error"`
 }
 
 // isPrime checks if a number is prime
@@ -126,9 +129,9 @@ func get(w http.ResponseWriter, r *http.Request) {
 
 	// Check for empty query
 	if query == "" {
-		errorResponse := Number{
-			Error:   true,
-			FunFact: "null",
+		errorResponse := Err{
+			Anomaly: true,
+			Integer: "null",
 		}
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(errorResponse)
@@ -144,9 +147,9 @@ func get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if isAlphabet {
-		errorResponse := Number{
-			Error:   true,
-			FunFact: "alphabet",
+		errorResponse := Err{
+			Anomaly: true,
+			Integer: "alphabet",
 		}
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(errorResponse)
@@ -156,9 +159,9 @@ func get(w http.ResponseWriter, r *http.Request) {
 	// Try converting to an integer
 	num, err := strconv.Atoi(query)
 	if err != nil {
-		errorResponse := Number{
-			Error:   true,
-			FunFact: "invalid",
+		errorResponse := Err{
+			Anomaly: true,
+			Integer: "invalid",
 		}
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(errorResponse)
