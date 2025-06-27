@@ -6,22 +6,46 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os" // Import the 'os' package to read environment variables
 )
 
-// dhlApiHandler is the function that will handle incoming web requests.
-func dhlApiHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Received request for /test-dhl-rates...")
+// getEnv gets an environment variable or returns a default value
+func getEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
+}
 
-	// DHL API Credentials and Test URL
-	username := "apZ1zO7sH0wB2m"
-	password := "S!3yL@3tV!7vH$7x"
+// rootHandler provides instructions when someone visits the main page.
+func rootHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintln(w, "<h1>DHL API Server is running!</h1>")
+	fmt.Fprintln(w, `<p>To test the DHL rates endpoint, append <strong>/test-dhl-rates</strong> to the URL.</p>`)
+}
+
+// dhlApiHandler handles the logic for calling the DHL API.
+func dhlApiHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("Received request for /test-dhl-rates...")
+
+	// --- Get credentials securely from environment variables ---
+	username := os.Getenv("DHL_USERNAME")
+	password := os.Getenv("DHL_PASSWORD")
+
+	if username == "" || password == "" {
+		http.Error(w, "Server configuration error: DHL credentials not set.", http.StatusInternalServerError)
+		log.Println("FATAL: DHL_USERNAME or DHL_PASSWORD environment variables are not set.")
+		return
+	}
+
 	baseURL := "https://express.api.dhl.com/mydhlapi/test"
 	endpoint := "/rates"
 
-	// Create a new HTTP client
 	client := &http.Client{}
-
-	// Create a new GET request to the DHL API
 	req, err := http.NewRequest("GET", baseURL+endpoint, nil)
 	if err != nil {
 		http.Error(w, "Failed to create DHL request", http.StatusInternalServerError)
@@ -29,14 +53,12 @@ func dhlApiHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create and set the Basic Authentication header
 	auth := username + ":" + password
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(auth))
 	req.Header.Add("Authorization", "Basic "+encodedAuth)
-	req.Header.Add("Accept", "application/json") // It's good practice to specify you accept JSON
+	req.Header.Add("Accept", "application/json")
 
-	// Send the request to DHL
-	fmt.Println("Calling DHL API...")
+	log.Println("Calling DHL API...")
 	resp, err := client.Do(req)
 	if err != nil {
 		http.Error(w, "Failed to send request to DHL", http.StatusInternalServerError)
@@ -45,7 +67,6 @@ func dhlApiHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	// Read the response from DHL
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		http.Error(w, "Failed to read DHL response", http.StatusInternalServerError)
@@ -53,26 +74,20 @@ func dhlApiHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set the content type of our response to the user
 	w.Header().Set("Content-Type", "application/json")
-
-	// Write the DHL response back to the user who visited our server
-	fmt.Fprintf(w, "Response from DHL API:\n\nStatus: %s\nBody: %s", resp.Status, string(body))
-	log.Println("Successfully served response from DHL. Status:", resp.Status)
+	w.WriteHeader(resp.StatusCode)
+	log.Printf("Successfully served response from DHL. Status: %s", resp.Status)
+	w.Write(body)
 }
 
 func main() {
-	// Register our handler function to respond to requests at the "/test-dhl-rates" URL path
+	// --- Use the PORT environment variable provided by Render ---
+	port := getEnv("PORT", "8080") // Fallback to 8080 for local testing
+
+	http.HandleFunc("/", rootHandler)
 	http.HandleFunc("/test-dhl-rates", dhlApiHandler)
 
-	// Define the port the server will listen on
-	port := "8080"
-
-	// Start the server
-	fmt.Printf("Server starting on port %s...\n", port)
-	fmt.Printf("Visit http://localhost:%s/test-dhl-rates to trigger the DHL API call.\n", port)
-
-	// The ListenAndServe function blocks forever, or until an error occurs.
+	log.Printf("Server starting on port %s...", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
