@@ -12,17 +12,24 @@ import (
 	"time"
 )
 
-// --- Structs to define the JSON body for the DHL request ---
+// --- Structs for the /shipments Request Body ---
 
-type RateRequest struct {
-	CustomerDetails    CustomerDetails `json:"customerDetails"`
-	Accounts           []Account       `json:"accounts"`
-	ProductsAndServices []ProductAndService `json:"productsAndServices,omitempty"` // Optional
-	PayerCountryCode   string          `json:"payerCountryCode,omitempty"`      // Optional
-	PlannedShippingDateAndTime string   `json:"plannedShippingDateAndTime"`
-	UnitOfMeasurement  string          `json:"unitOfMeasurement"`
-	IsCustomsDeclarable bool           `json:"isCustomsDeclarable"`
-	Packages           []Package       `json:"packages"`
+type ShipmentRequest struct {
+	PlannedShippingDateAndTime string          `json:"plannedShippingDateAndTime"`
+	Pickup                     Pickup          `json:"pickup"`
+	ProductCode                string          `json:"productCode"`
+	Accounts                   []Account       `json:"accounts"`
+	CustomerDetails            CustomerDetails `json:"customerDetails"`
+	Content                    Content         `json:"content"`
+}
+
+type Pickup struct {
+	IsRequested bool `json:"isRequested"`
+}
+
+type Account struct {
+	TypeCode string `json:"typeCode"`
+	Number   string `json:"number"`
 }
 
 type CustomerDetails struct {
@@ -31,24 +38,36 @@ type CustomerDetails struct {
 }
 
 type ShipperDetails struct {
-	PostalCode  string `json:"postalCode"`
-	CityName    string `json:"cityName"`
-	CountryCode string `json:"countryCode"`
+	PostalAddress PostalAddress `json:"postalAddress"`
+	ContactInformation ContactInformation `json:"contactInformation"`
 }
 
 type ReceiverDetails struct {
+	PostalAddress PostalAddress `json:"postalAddress"`
+	ContactInformation ContactInformation `json:"contactInformation"`
+}
+
+type PostalAddress struct {
 	PostalCode  string `json:"postalCode"`
 	CityName    string `json:"cityName"`
 	CountryCode string `json:"countryCode"`
+	AddressLine1 string `json:"addressLine1"`
+	CountyName string `json:"countyName,omitempty"`
 }
 
-type Account struct {
-	TypeCode string `json:"typeCode"`
-	Number   string `json:"number"`
+type ContactInformation struct {
+	Email      string `json:"email,omitempty"`
+	Phone      string `json:"phone"`
+	MobilePhone string `json:"mobilePhone,omitempty"`
+	CompanyName string `json:"companyName"`
+	FullName    string `json:"fullName"`
 }
 
-type ProductAndService struct {
-	ProductCode string `json:"productCode"`
+type Content struct {
+	Packages            []Package `json:"packages"`
+	IsCustomsDeclarable bool      `json:"isCustomsDeclarable"`
+	Description         string    `json:"description"`
+	UnitOfMeasurement   string    `json:"unitOfMeasurement"`
 }
 
 type Package struct {
@@ -78,25 +97,22 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintln(w, "<h1>DHL API Server is running!</h1>")
-	fmt.Fprintln(w, `<p>To test the DHL rates endpoint, make a POST request to <strong>/test-dhl-rates</strong>.</p>`)
+	fmt.Fprintln(w, "<h1>DHL Shipment API Server</h1>")
+	fmt.Fprintln(w, `<p>To create a shipment and get a tracking number, make a POST request to <strong>/create-shipment</strong>.</p>`)
 }
 
-// dhlApiHandler handles the logic for calling the DHL API.
-func dhlApiHandler(w http.ResponseWriter, r *http.Request) {
-
-	// We only accept POST requests now
+// dhlShipmentHandler handles the logic for creating a DHL shipment.
+func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method, please use POST.", http.StatusMethodNotAllowed)
 		return
 	}
-	
-	log.Println("Received POST request for /test-dhl-rates...")
+
+	log.Println("Received POST request for /create-shipment...")
 
 	// --- Get credentials securely from environment variables ---
 	username := os.Getenv("DHL_USERNAME")
 	password := os.Getenv("DHL_PASSWORD")
-	// IMPORTANT: You must get your DHL Account Number and add it to your Render Environment Variables
 	accountNumber := os.Getenv("DHL_ACCOUNT_NUMBER")
 
 	if username == "" || password == "" || accountNumber == "" {
@@ -105,46 +121,67 @@ func dhlApiHandler(w http.ResponseWriter, r *http.Request) {
 		log.Println("FATAL:", errorMsg)
 		return
 	}
-	
-	// --- Create the request body with all mandatory parameters ---
-	// This is an example for a domestic shipment within Nigeria (Lagos to Abuja)
-	// You will need to change these values based on the actual shipment.
-	requestBody := RateRequest{
-		CustomerDetails: CustomerDetails{
-			ShipperDetails: ShipperDetails{
-				PostalCode:  "100001",
-				CityName:    "Lagos",
-				CountryCode: "NG",
-			},
-			ReceiverDetails: ReceiverDetails{
-				PostalCode:  "900001",
-				CityName:    "Abuja",
-				CountryCode: "NG",
-			},
+
+	// --- Create the request body for a new shipment ---
+	// This is an example for a domestic shipment within Nigeria.
+	// Change these details as needed for your specific shipments.
+	requestBody := ShipmentRequest{
+		PlannedShippingDateAndTime: time.Now().AddDate(0, 0, 1).Format("2006-01-02T15:04:05") + " GMT+01:00",
+		Pickup: Pickup{
+			IsRequested: false, // Set to true if you want DHL to schedule a pickup
 		},
+		ProductCode: "N", // 'N' is a common code for Domestic Express
 		Accounts: []Account{
 			{
 				TypeCode: "shipper",
 				Number:   accountNumber,
 			},
 		},
-		// The API requires a future date. We'll use tomorrow's date.
-		PlannedShippingDateAndTime: time.Now().AddDate(0, 0, 1).Format("2006-01-02T15:04:05") + " GMT+01:00",
-		UnitOfMeasurement:  "metric",
-		IsCustomsDeclarable: false, // For a domestic shipment
-		Packages: []Package{
-			{
-				Weight: 2.5, // in kilograms
-				Dimensions: Dimensions{
-					Length: 30, // in centimeters
-					Width:  20,
-					Height: 10,
+		CustomerDetails: CustomerDetails{
+			ShipperDetails: ShipperDetails{
+				PostalAddress: PostalAddress{
+					PostalCode:  "100001",
+					CityName:    "Lagos",
+					CountryCode: "NG",
+					AddressLine1: "123 Shipper Street",
+				},
+				ContactInformation: ContactInformation{
+					Phone:      "08012345678",
+					CompanyName: "Shipper Inc",
+					FullName:    "John Shipper",
+				},
+			},
+			ReceiverDetails: ReceiverDetails{
+				PostalAddress: PostalAddress{
+					PostalCode:  "900001",
+					CityName:    "Abuja",
+					CountryCode: "NG",
+					AddressLine1: "456 Receiver Avenue",
+				},
+				ContactInformation: ContactInformation{
+					Phone:      "09012345678",
+					CompanyName: "Receiver Corp",
+					FullName:    "Jane Receiver",
 				},
 			},
 		},
+		Content: Content{
+			Packages: []Package{
+				{
+					Weight: 1.5,
+					Dimensions: Dimensions{
+						Length: 20,
+						Width:  15,
+						Height: 10,
+					},
+				},
+			},
+			IsCustomsDeclarable: false,
+			Description:         "Business Documents",
+			UnitOfMeasurement:   "metric",
+		},
 	}
 
-	// Convert the Go struct to a JSON byte slice
 	jsonBody, err := json.Marshal(requestBody)
 	if err != nil {
 		http.Error(w, "Failed to create JSON body", http.StatusInternalServerError)
@@ -154,10 +191,9 @@ func dhlApiHandler(w http.ResponseWriter, r *http.Request) {
 
 	// --- Make the POST request to DHL ---
 	baseURL := "https://express.api.dhl.com/mydhlapi/test"
-	endpoint := "/rates"
+	endpoint := "/shipments"
 	client := &http.Client{}
 
-	// Note: We now use http.NewRequest to specify the POST method and include the body
 	req, err := http.NewRequest("POST", baseURL+endpoint, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		http.Error(w, "Failed to create DHL request", http.StatusInternalServerError)
@@ -168,9 +204,9 @@ func dhlApiHandler(w http.ResponseWriter, r *http.Request) {
 	auth := username + ":" + password
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(auth))
 	req.Header.Add("Authorization", "Basic "+encodedAuth)
-	req.Header.Set("Content-Type", "application/json") // Set content type for POST request
+	req.Header.Set("Content-Type", "application/json")
 
-	log.Println("Calling DHL API with POST request...")
+	log.Printf("Calling DHL /shipments endpoint...")
 	resp, err := client.Do(req)
 	if err != nil {
 		http.Error(w, "Failed to send request to DHL", http.StatusInternalServerError)
@@ -186,19 +222,19 @@ func dhlApiHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Successfully served response from DHL. Status: %s", resp.Status)
+	log.Printf("Received response from DHL. Status: %s", resp.Status)
 
-	// Return the response from DHL back to the user
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
-	w.Write(body)
+	w.Write(body) // Return the full response from DHL
 }
 
 func main() {
 	port := getEnv("PORT", "8080")
 
 	http.HandleFunc("/", rootHandler)
-	http.HandleFunc("/test-dhl-rates", dhlApiHandler)
+	// New endpoint for creating shipments
+	http.HandleFunc("/create-shipment", dhlShipmentHandler)
 
 	log.Printf("Server starting on port %s...", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
