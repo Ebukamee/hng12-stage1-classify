@@ -12,8 +12,7 @@ import (
 	"time"
 )
 
-// --- Structs for the /shipments Request Body ---
-
+// ... (Keep all the structs: ShipmentRequest, Pickup, Account, etc. exactly as they were) ...
 type ShipmentRequest struct {
 	PlannedShippingDateAndTime string          `json:"plannedShippingDateAndTime"`
 	Pickup                     Pickup          `json:"pickup"`
@@ -81,28 +80,26 @@ type Dimensions struct {
 	Height float64 `json:"height"`
 }
 
-// getEnv gets an environment variable or returns a default value
+
 func getEnv(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
 	}
-	log.Printf("Warning: Environment variable %s not set, using fallback.", key)
 	return fallback
 }
 
-// rootHandler provides instructions when someone visits the main page.
 func rootHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintln(w, "<h1>DHL Shipment API Server</h1>")
+	fmt.Fprintln(w, "<h1>DHL Shipment API Server is running!</h1>")
 	fmt.Fprintln(w, `<p>To create a shipment and get a tracking number, make a POST request to <strong>/create-shipment</strong>.</p>`)
 }
 
-// dhlShipmentHandler handles the logic for creating a DHL shipment.
 func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
+    // ... (Keep the handler code exactly the same) ...
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method, please use POST.", http.StatusMethodNotAllowed)
 		return
@@ -110,7 +107,6 @@ func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("Received POST request for /create-shipment...")
 
-	// --- Get credentials securely from environment variables ---
 	username := os.Getenv("DHL_USERNAME")
 	password := os.Getenv("DHL_PASSWORD")
 	accountNumber := os.Getenv("DHL_ACCOUNT_NUMBER")
@@ -121,16 +117,13 @@ func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
 		log.Println("FATAL:", errorMsg)
 		return
 	}
-
-	// --- Create the request body for a new shipment ---
-	// This is an example for a domestic shipment within Nigeria.
-	// Change these details as needed for your specific shipments.
+	
 	requestBody := ShipmentRequest{
 		PlannedShippingDateAndTime: time.Now().AddDate(0, 0, 1).Format("2006-01-02T15:04:05") + " GMT+01:00",
 		Pickup: Pickup{
-			IsRequested: false, // Set to true if you want DHL to schedule a pickup
+			IsRequested: false, 
 		},
-		ProductCode: "N", // 'N' is a common code for Domestic Express
+		ProductCode: "N", 
 		Accounts: []Account{
 			{
 				TypeCode: "shipper",
@@ -189,7 +182,6 @@ func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// --- Make the POST request to DHL ---
 	baseURL := "https://express.api.dhl.com/mydhlapi/test"
 	endpoint := "/shipments"
 	client := &http.Client{}
@@ -226,18 +218,24 @@ func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
-	w.Write(body) // Return the full response from DHL
+	w.Write(body)
 }
 
+
 func main() {
+    log.Println("Application starting up...")
+
 	port := getEnv("PORT", "8080")
+    log.Printf("Resolved port: %s", port)
 
 	http.HandleFunc("/", rootHandler)
-	// New endpoint for creating shipments
-	http.HandleFunc("/create-shipment", dhlShipmentHandler)
+    log.Println("Root handler ('/') registered.")
 
-	log.Printf("Server starting on port %s...", port)
+	http.HandleFunc("/create-shipment", dhlShipmentHandler)
+    log.Println("Shipment handler ('/create-shipment') registered.")
+
+	log.Printf("Attempting to start server on port %s...", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatal("ListenAndServe: ", err)
+		log.Fatalf("FATAL: Server failed to start: %v", err)
 	}
 }
