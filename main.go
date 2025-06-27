@@ -19,36 +19,41 @@ func main() {
 		username := "apZ1zO7sH0wB2m"
 		password := "S!3yL@3tV!7vH$7x"
 
-		// Encode credentials for Basic Auth
 		auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+		url := "https://express.api.dhl.com/mydhlapi/shipments"
 
-		// DHL endpoint (NOT /test)
-		url := "https://express.api.dhl.com/mydhlapi/rates"
-
-		// Sample request body for DHL /rates (you can adjust this)
+		// Sample DHL test shipment payload
 		jsonBody := []byte(`{
+			"plannedShippingDateAndTime": "2025-07-01T12:00:00GMT+01:00",
+			"pickup": {
+				"isRequested": false
+			},
+			"productCode": "P",
 			"customerDetails": {
 				"shipperDetails": {
 					"postalCode": "10115",
 					"cityName": "Berlin",
-					"countryCode": "DE"
+					"countryCode": "DE",
+					"addressLine1": "Shipper Street 1",
+					"name": "Test Shipper",
+					"email": "shipper@example.com",
+					"phone": "1234567890"
 				},
 				"receiverDetails": {
 					"postalCode": "20095",
 					"cityName": "Hamburg",
-					"countryCode": "DE"
+					"countryCode": "DE",
+					"addressLine1": "Receiver Street 1",
+					"name": "Test Receiver",
+					"email": "receiver@example.com",
+					"phone": "0987654321"
 				}
 			},
-			"plannedShippingDateAndTime": "2025-07-01T12:00:00GMT+01:00",
-			"unitOfMeasurement": "metric",
-			"isCustomsDeclarable": false,
 			"content": "documents",
-			"declaredValue": 100,
-			"declaredValueCurrency": "EUR",
 			"packages": [
 				{
 					"typeCode": "BOX",
-					"weight": 2,
+					"weight": 1.5,
 					"dimensions": {
 						"length": 10,
 						"width": 10,
@@ -58,34 +63,30 @@ func main() {
 			]
 		}`)
 
-		// Create the request
 		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
 		if err != nil {
-			http.Error(w, "Error creating request", http.StatusInternalServerError)
+			http.Error(w, "Failed to create request", http.StatusInternalServerError)
 			return
 		}
 
-		// Set headers
 		req.Header.Add("Authorization", "Basic "+auth)
 		req.Header.Set("Content-Type", "application/json")
 
-		// Send request
 		client := &http.Client{}
 		resp, err := client.Do(req)
 		if err != nil {
-			http.Error(w, "Error contacting DHL API", http.StatusInternalServerError)
+			http.Error(w, "DHL request failed", http.StatusInternalServerError)
 			return
 		}
 		defer resp.Body.Close()
 
-		// Read and forward response
 		body, _ := io.ReadAll(resp.Body)
-		fmt.Println("DHL Response:", string(body)) // logs to Render
+		fmt.Println("DHL Shipment Response:", string(body))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(resp.StatusCode)
 		w.Write(body)
 	})
 
-	fmt.Println("✅ Server running on port", port)
+	fmt.Println("🚀 Server running on port", port)
 	http.ListenAndServe(":"+port, nil)
 }
