@@ -9,10 +9,9 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
 )
 
-// ... (Keep all the structs: ShipmentRequest, Pickup, Account, etc. exactly as they were) ...
+// --- The Structs remain the same, as they define the contract with the DHL API ---
 type ShipmentRequest struct {
 	PlannedShippingDateAndTime string          `json:"plannedShippingDateAndTime"`
 	Pickup                     Pickup          `json:"pickup"`
@@ -94,95 +93,48 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintln(w, "<h1>DHL Shipment API Server is running!</h1>")
-	fmt.Fprintln(w, `<p>To create a shipment and get a tracking number, make a POST request to <strong>/create-shipment</strong>.</p>`)
+	fmt.Fprintln(w, "<h1>DHL Dynamic Shipment API Server</h1>")
+	fmt.Fprintln(w, `<p>To create a shipment, make a POST request to <strong>/create-shipment</strong> with your shipment data in the JSON body.</p>`)
 }
 
+// dhlShipmentHandler now acts as a dynamic proxy to the DHL API.
 func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
-    // ... (Keep the handler code exactly the same) ...
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method, please use POST.", http.StatusMethodNotAllowed)
 		return
 	}
 
-	log.Println("Received POST request for /create-shipment...")
+	log.Println("Received dynamic request for /create-shipment...")
 
+	// --- Decode the JSON body from the incoming request ---
+	var requestBody ShipmentRequest
+	err := json.NewDecoder(r.Body).Decode(&requestBody)
+	if err != nil {
+		http.Error(w, "Bad request: could not decode JSON body. "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	
+	// --- Get credentials securely from environment variables ---
 	username := os.Getenv("DHL_USERNAME")
 	password := os.Getenv("DHL_PASSWORD")
-	accountNumber := os.Getenv("DHL_ACCOUNT_NUMBER")
 
-	if username == "" || password == "" || accountNumber == "" {
-		errorMsg := "Server configuration error: DHL_USERNAME, DHL_PASSWORD, or DHL_ACCOUNT_NUMBER not set."
+	if username == "" || password == "" {
+		errorMsg := "Server configuration error: DHL credentials not set."
 		http.Error(w, errorMsg, http.StatusInternalServerError)
 		log.Println("FATAL:", errorMsg)
 		return
 	}
-	
-	requestBody := ShipmentRequest{
-		PlannedShippingDateAndTime: time.Now().AddDate(0, 0, 1).Format("2006-01-02T15:04:05") + " GMT+01:00",
-		Pickup: Pickup{
-			IsRequested: false, 
-		},
-		ProductCode: "N", 
-		Accounts: []Account{
-			{
-				TypeCode: "shipper",
-				Number:   accountNumber,
-			},
-		},
-		CustomerDetails: CustomerDetails{
-			ShipperDetails: ShipperDetails{
-				PostalAddress: PostalAddress{
-					PostalCode:  "100001",
-					CityName:    "Lagos",
-					CountryCode: "NG",
-					AddressLine1: "123 Shipper Street",
-				},
-				ContactInformation: ContactInformation{
-					Phone:      "08012345678",
-					CompanyName: "Shipper Inc",
-					FullName:    "John Shipper",
-				},
-			},
-			ReceiverDetails: ReceiverDetails{
-				PostalAddress: PostalAddress{
-					PostalCode:  "900001",
-					CityName:    "Abuja",
-					CountryCode: "NG",
-					AddressLine1: "456 Receiver Avenue",
-				},
-				ContactInformation: ContactInformation{
-					Phone:      "09012345678",
-					CompanyName: "Receiver Corp",
-					FullName:    "Jane Receiver",
-				},
-			},
-		},
-		Content: Content{
-			Packages: []Package{
-				{
-					Weight: 1.5,
-					Dimensions: Dimensions{
-						Length: 20,
-						Width:  15,
-						Height: 10,
-					},
-				},
-			},
-			IsCustomsDeclarable: false,
-			Description:         "Business Documents",
-			UnitOfMeasurement:   "metric",
-		},
-	}
 
+	// Marshal the received body back into JSON format to send to DHL.
 	jsonBody, err := json.Marshal(requestBody)
 	if err != nil {
-		http.Error(w, "Failed to create JSON body", http.StatusInternalServerError)
-		log.Println("Error marshalling JSON:", err)
+		http.Error(w, "Failed to re-marshal JSON body", http.StatusInternalServerError)
+		log.Println("Error re-marshalling JSON:", err)
 		return
 	}
 
-	baseURL := "https://express.api.dhl.com/mydhlapi/"
+	// --- Make the POST request to DHL ---
+	baseURL := "https://express.api.dhl.com/mydhlapi/test"
 	endpoint := "/shipments"
 	client := &http.Client{}
 
@@ -198,7 +150,7 @@ func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
 	req.Header.Add("Authorization", "Basic "+encodedAuth)
 	req.Header.Set("Content-Type", "application/json")
 
-	log.Printf("Calling DHL /shipments endpoint...")
+	log.Printf("Calling DHL /shipments endpoint with dynamic data...")
 	resp, err := client.Do(req)
 	if err != nil {
 		http.Error(w, "Failed to send request to DHL", http.StatusInternalServerError)
@@ -221,21 +173,14 @@ func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(body)
 }
 
-
 func main() {
-    log.Println("Application starting up...")
-
 	port := getEnv("PORT", "8080")
-    log.Printf("Resolved port: %s", port)
 
 	http.HandleFunc("/", rootHandler)
-    log.Println("Root handler ('/') registered.")
-
 	http.HandleFunc("/create-shipment", dhlShipmentHandler)
-    log.Println("Shipment handler ('/create-shipment') registered.")
 
-	log.Printf("Attempting to start server on port %s...", port)
+	log.Printf("Server starting on port %s...", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatalf("FATAL: Server failed to start: %v", err)
+		log.Fatal("ListenAndServe: ", err)
 	}
 }
