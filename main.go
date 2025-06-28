@@ -11,7 +11,8 @@ import (
 	"os"
 )
 
-// --- The Structs remain the same, as they define the contract with the DHL API ---
+// ---------------------- Structs for DHL Shipment ----------------------
+
 type ShipmentRequest struct {
 	PlannedShippingDateAndTime string          `json:"plannedShippingDateAndTime"`
 	Pickup                     Pickup          `json:"pickup"`
@@ -46,9 +47,9 @@ type ReceiverDetails struct {
 }
 
 type PostalAddress struct {
-	PostalCode  string `json:"postalCode"`
-	CityName    string `json:"cityName"`
-	CountryCode string `json:"countryCode"`
+	PostalCode   string `json:"postalCode"`
+	CityName     string `json:"cityName"`
+	CountryCode  string `json:"countryCode"`
 	AddressLine1 string `json:"addressLine1"`
 	CountyName   string `json:"countyName,omitempty"`
 }
@@ -79,55 +80,58 @@ type Dimensions struct {
 	Height float64 `json:"height"`
 }
 
-// Utility function to get env vars with fallback
+// ---------------------- Utility ----------------------
+
 func getEnv(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
 	}
+	log.Printf("Warning: env %s not set, using fallback.", key)
 	return fallback
 }
 
-// Root route handler
+// ---------------------- Root Handler ----------------------
+
 func rootHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintln(w, "<h1>DHL Dynamic Shipment API Server</h1>")
-	fmt.Fprintln(w, `<p>To create a shipment, make a POST request to <strong>/create-shipment</strong> with your shipment data in the JSON body.</p>`)
+	fmt.Fprintln(w, "<h1>DHL Live Shipment API Server</h1>")
+	fmt.Fprintln(w, `<p>Send a POST request to <strong>/create-shipment</strong> with shipment data in JSON format.</p>`)
 }
 
-// DHL shipment handler
+// ---------------------- DHL Shipment Handler ----------------------
+
 func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method, please use POST.", http.StatusMethodNotAllowed)
 		return
 	}
 
-	log.Println("Received dynamic request for /create-shipment...")
+	log.Println("📦 Received request to create a DHL shipment")
 
-	// Decode incoming JSON
+	// Parse incoming shipment JSON
 	var requestBody ShipmentRequest
 	err := json.NewDecoder(r.Body).Decode(&requestBody)
 	if err != nil {
-		http.Error(w, "Bad request: could not decode JSON body. "+err.Error(), http.StatusBadRequest)
+		http.Error(w, "Invalid JSON body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Get credentials securely from environment
+	// Load DHL credentials
 	username := os.Getenv("DHL_USERNAME")
 	password := os.Getenv("DHL_PASSWORD")
 	accountNumber := os.Getenv("DHL_ACCOUNT_NUMBER")
 
 	if username == "" || password == "" || accountNumber == "" {
-		errorMsg := "Server config error: DHL_USERNAME, DHL_PASSWORD, or DHL_ACCOUNT_NUMBER not set."
-		http.Error(w, errorMsg, http.StatusInternalServerError)
-		log.Println("FATAL:", errorMsg)
+		http.Error(w, "Missing DHL env variables", http.StatusInternalServerError)
+		log.Println("❌ DHL_USERNAME, DHL_PASSWORD, or DHL_ACCOUNT_NUMBER is not set")
 		return
 	}
 
-	// Inject DHL account number into request body
+	// Inject secure account number into the request
 	if len(requestBody.Accounts) == 0 {
 		requestBody.Accounts = []Account{
 			{TypeCode: "shipper", Number: accountNumber},
@@ -138,36 +142,37 @@ func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Marshal updated request body
+	// Marshal to JSON
 	jsonBody, err := json.Marshal(requestBody)
 	if err != nil {
-		http.Error(w, "Failed to re-marshal JSON body", http.StatusInternalServerError)
-		log.Println("Error re-marshalling JSON:", err)
+		http.Error(w, "Failed to marshal request", http.StatusInternalServerError)
+		log.Println("❌ Marshal error:", err)
 		return
 	}
 
-	// Prepare and send request to DHL
-	baseURL := "https://express.api.dhl.com/mydhlapi/test"
+	// ✅ LIVE DHL production URL
+	baseURL := "https://express.api.dhl.com/mydhlapi"
 	endpoint := "/shipments"
-	client := &http.Client{}
+	fullURL := baseURL + endpoint
 
-	req, err := http.NewRequest("POST", baseURL+endpoint, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequest("POST", fullURL, bytes.NewBuffer(jsonBody))
 	if err != nil {
-		http.Error(w, "Failed to create DHL request", http.StatusInternalServerError)
-		log.Println("Error creating DHL POST request:", err)
+		http.Error(w, "Failed to create request to DHL", http.StatusInternalServerError)
+		log.Println("❌ Request creation error:", err)
 		return
 	}
 
+	// Auth
 	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
 	req.Header.Add("Authorization", "Basic "+auth)
 	req.Header.Set("Content-Type", "application/json")
 
-	log.Println("Calling DHL /shipments endpoint with injected account number...")
+	log.Println("🚀 Sending live shipment request to DHL...")
 
-	resp, err := client.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		http.Error(w, "Failed to send request to DHL", http.StatusInternalServerError)
-		log.Println("Error sending request to DHL:", err)
+		http.Error(w, "Error contacting DHL", http.StatusInternalServerError)
+		log.Println("❌ HTTP error:", err)
 		return
 	}
 	defer resp.Body.Close()
@@ -175,26 +180,28 @@ func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		http.Error(w, "Failed to read DHL response", http.StatusInternalServerError)
-		log.Println("Error reading DHL response:", err)
+		log.Println("❌ Read error:", err)
 		return
 	}
 
-	log.Printf("Received response from DHL. Status: %s", resp.Status)
+	log.Printf("✅ DHL response received with status: %s", resp.Status)
 
+	// Send DHL response back to client
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
 	w.Write(body)
 }
 
-// Main function
+// ---------------------- Main Entry Point ----------------------
+
 func main() {
 	port := getEnv("PORT", "8080")
 
 	http.HandleFunc("/", rootHandler)
 	http.HandleFunc("/create-shipment", dhlShipmentHandler)
 
-	log.Printf("Server starting on port %s...", port)
+	log.Printf("🚀 Server running on port %s", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatal("ListenAndServe: ", err)
+		log.Fatal("❌ Server startup failed:", err)
 	}
 }
