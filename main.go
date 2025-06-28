@@ -36,12 +36,12 @@ type CustomerDetails struct {
 }
 
 type ShipperDetails struct {
-	PostalAddress PostalAddress `json:"postalAddress"`
+	PostalAddress     PostalAddress     `json:"postalAddress"`
 	ContactInformation ContactInformation `json:"contactInformation"`
 }
 
 type ReceiverDetails struct {
-	PostalAddress PostalAddress `json:"postalAddress"`
+	PostalAddress     PostalAddress     `json:"postalAddress"`
 	ContactInformation ContactInformation `json:"contactInformation"`
 }
 
@@ -50,12 +50,12 @@ type PostalAddress struct {
 	CityName    string `json:"cityName"`
 	CountryCode string `json:"countryCode"`
 	AddressLine1 string `json:"addressLine1"`
-	CountyName string `json:"countyName,omitempty"`
+	CountyName   string `json:"countyName,omitempty"`
 }
 
 type ContactInformation struct {
-	Email      string `json:"email,omitempty"`
-	Phone      string `json:"phone"`
+	Email       string `json:"email,omitempty"`
+	Phone       string `json:"phone"`
 	MobilePhone string `json:"mobilePhone,omitempty"`
 	CompanyName string `json:"companyName"`
 	FullName    string `json:"fullName"`
@@ -69,7 +69,7 @@ type Content struct {
 }
 
 type Package struct {
-	Weight float64 `json:"weight"`
+	Weight     float64    `json:"weight"`
 	Dimensions Dimensions `json:"dimensions"`
 }
 
@@ -79,7 +79,7 @@ type Dimensions struct {
 	Height float64 `json:"height"`
 }
 
-
+// Utility function to get env vars with fallback
 func getEnv(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
@@ -87,6 +87,7 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+// Root route handler
 func rootHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -97,7 +98,7 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, `<p>To create a shipment, make a POST request to <strong>/create-shipment</strong> with your shipment data in the JSON body.</p>`)
 }
 
-// dhlShipmentHandler now acts as a dynamic proxy to the DHL API.
+// DHL shipment handler
 func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method, please use POST.", http.StatusMethodNotAllowed)
@@ -106,26 +107,38 @@ func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("Received dynamic request for /create-shipment...")
 
-	// --- Decode the JSON body from the incoming request ---
+	// Decode incoming JSON
 	var requestBody ShipmentRequest
 	err := json.NewDecoder(r.Body).Decode(&requestBody)
 	if err != nil {
 		http.Error(w, "Bad request: could not decode JSON body. "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	
-	// --- Get credentials securely from environment variables ---
+
+	// Get credentials securely from environment
 	username := os.Getenv("DHL_USERNAME")
 	password := os.Getenv("DHL_PASSWORD")
+	accountNumber := os.Getenv("DHL_ACCOUNT_NUMBER")
 
-	if username == "" || password == "" {
-		errorMsg := "Server configuration error: DHL credentials not set."
+	if username == "" || password == "" || accountNumber == "" {
+		errorMsg := "Server config error: DHL_USERNAME, DHL_PASSWORD, or DHL_ACCOUNT_NUMBER not set."
 		http.Error(w, errorMsg, http.StatusInternalServerError)
 		log.Println("FATAL:", errorMsg)
 		return
 	}
 
-	// Marshal the received body back into JSON format to send to DHL.
+	// Inject DHL account number into request body
+	if len(requestBody.Accounts) == 0 {
+		requestBody.Accounts = []Account{
+			{TypeCode: "shipper", Number: accountNumber},
+		}
+	} else {
+		for i := range requestBody.Accounts {
+			requestBody.Accounts[i].Number = accountNumber
+		}
+	}
+
+	// Marshal updated request body
 	jsonBody, err := json.Marshal(requestBody)
 	if err != nil {
 		http.Error(w, "Failed to re-marshal JSON body", http.StatusInternalServerError)
@@ -133,7 +146,7 @@ func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// --- Make the POST request to DHL ---
+	// Prepare and send request to DHL
 	baseURL := "https://express.api.dhl.com/mydhlapi/test"
 	endpoint := "/shipments"
 	client := &http.Client{}
@@ -145,12 +158,12 @@ func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth := username + ":" + password
-	encodedAuth := base64.StdEncoding.EncodeToString([]byte(auth))
-	req.Header.Add("Authorization", "Basic "+encodedAuth)
+	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+	req.Header.Add("Authorization", "Basic "+auth)
 	req.Header.Set("Content-Type", "application/json")
 
-	log.Printf("Calling DHL /shipments endpoint with dynamic data...")
+	log.Println("Calling DHL /shipments endpoint with injected account number...")
+
 	resp, err := client.Do(req)
 	if err != nil {
 		http.Error(w, "Failed to send request to DHL", http.StatusInternalServerError)
@@ -173,6 +186,7 @@ func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(body)
 }
 
+// Main function
 func main() {
 	port := getEnv("PORT", "8080")
 
