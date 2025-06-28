@@ -182,7 +182,7 @@ func dhlShipmentHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	baseURL := "https://express.api.dhl.com/mydhlapi/test"
+	baseURL := "https://express.api.dhl.com/mydhlapi/"
 	endpoint := "/shipments"
 	client := &http.Client{}
 
